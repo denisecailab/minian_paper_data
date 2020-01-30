@@ -2,3 +2,5 @@ archive
 data
 ezTrack_snapshot
 minian_snapshot
+.vscode
+__pycache__
