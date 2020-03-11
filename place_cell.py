@@ -28,13 +28,12 @@ def map_ts(ts: pd.DataFrame) -> pd.DataFrame:
     pd.DataFrame
         output dataframe. should contain field 'fmCam0' and 'fmCam1'
     """
-    ts["change_point"] = ts["camNum"].diff()
-    ts["ts_behav"] = np.where(ts["change_point"] == 1, ts["sysClock"], np.nan)
+    ts["ts_behav"] = np.where(ts["camNum"] == 1, ts["sysClock"], np.nan)
     ts["ts_forward"] = ts["ts_behav"].fillna(method="ffill")
     ts["ts_backward"] = ts["ts_behav"].fillna(method="bfill")
     ts["diff_forward"] = np.absolute(ts["sysClock"] - ts["ts_forward"])
     ts["diff_backward"] = np.absolute(ts["sysClock"] - ts["ts_backward"])
-    ts["fm_behav"] = np.where(ts["change_point"] == 1, ts["frameNum"], np.nan)
+    ts["fm_behav"] = np.where(ts["camNum"] == 1, ts["frameNum"], np.nan)
     ts["fm_forward"] = ts["fm_behav"].fillna(method="ffill")
     ts["fm_backward"] = ts["fm_behav"].fillna(method="bfill")
     ts["fmCam1"] = np.where(

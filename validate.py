@@ -1,32 +1,16 @@
 # %%
 # imports and setup
-import os
-import sys
-import re
 import numpy as np
 import xarray as xr
 import pandas as pd
-import holoviews as hv
 import pickle as pkl
-import place_cell as plc
 import functools as fct
 import seaborn as sns
-import colorsys
 from matplotlib import pyplot as plt
 from matplotlib.colors import hsv_to_rgb
-from tqdm import tqdm_notebook
 from dask.array import tensordot
-from holoviews.operation.datashader import datashade, regrid
-from scipy.signal import medfilt
-from holoviews.util import Dynamic
-from dask.diagnostics import ProgressBar
-from natsort import natsorted
-from sklearn.mixture import GaussianMixture
-from scipy.ndimage.measurements import center_of_mass
-from scipy.ndimage import label
 from place_cell import thres_gmm
-from minian_snapshot.minian.cnmf import compute_trace
-from minian_snapshot.minian.utilities import open_minian, load_videos, get_optimal_chk
+from minian_snapshot.minian.utilities import open_minian, load_videos
 
 SMALL_SIZE = 5
 MEDIUM_SIZE = 6
@@ -275,15 +259,21 @@ nac_corrs = corr_roll(nac_ds["A"].compute(), nac_max_y)
 nac_corr_true = np.corrcoef(
     nac_ds["A"].sum("unit_id").values.reshape(-1), nac_max_y.values.reshape(-1)
 )[0, 1]
+np.save("./data/inter/hipp_corrs.npy", hipp_corrs)
+np.save("./data/inter/nac_corrs.npy", nac_corrs)
+# %%
+# open shuffled correlations
+hipp_corrs = np.load("./data/inter/hipp_corrs.npy")
+nac_corrs = np.load("./data/inter/nac_corrs.npy")
 # %%
 # generate plot
-def lineplot(x, y, data, hue, hue_order, ylim, ax):
+def lineplot(data, ylim, ax):
     sns.lineplot(
-        x=x,
-        y=y,
+        x="fm_sample",
+        y="ya",
+        hue="shuf",
+        hue_order=["Shuffled", "Aligned"],
         data=data,
-        hue=hue,
-        hue_order=hue_order,
         ax=ax,
         linewidth=1,
         legend="full",
@@ -292,8 +282,11 @@ def lineplot(x, y, data, hue, hue_order, ylim, ax):
     ax.set_xlabel("Frame", fontstyle="italic")
     ax.set_ylabel("Signal (A.U.)", fontstyle="italic")
     len_hand, len_lab = ax.get_legend_handles_labels()
-    ax.legend(handles=len_hand[1:], labels=len_lab[1:], loc="upper right")
+    ax.legend(handles=len_hand[1:], labels=len_lab[1:], loc="upper left")
+    xlim = (-165, 165)
+    ax.set_xlim(xlim)
     ax.set_ylim(ylim)
+    ax.set_aspect((1 / np.diff(ylim)) / (1.5 / np.diff(xlim)))
 
 
 def implot(arr, ax, **kwargs):
@@ -308,6 +301,7 @@ def implot(arr, ax, **kwargs):
         arr_rgb = hsv_to_rgb(arr_hsv).sum(axis=0)
         ax.imshow(arr_rgb, **kwargs)
         ax.invert_yaxis()
+    ax.set_ylim((0, arr.shape[-1] * 480 / 752))
     ax.margins(0)
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
@@ -316,59 +310,102 @@ def implot(arr, ax, **kwargs):
 def corrplot(corrs, corr_true, ax, **kwargs):
     sns.distplot(
         corrs,
+        bins=15,
         norm_hist=True,
         kde_kws={"linewidth": 1},
         hist_kws={"alpha": 0.7, "density": True, "rwidth": 1, "linewidth": 0.2},
         ax=ax,
+        **kwargs,
     )
     ax.axvline(corr_true, linewidth=1, color="red")
     ax.set_xlabel("Correlation", fontstyle="italic")
     ax.set_ylabel("Count", fontstyle="italic")
+    xlim = (-0.15, 0.7)
+    ylim = (0, 18)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.set_yticks(np.arange(start=ylim[0], stop=ylim[1], step=3))
+    ax.set_aspect((1 / np.diff(ylim)) / (1.4 / np.diff(xlim)))
+    texprops = {
+        "fontsize": MEDIUM_SIZE,
+        "horizontalalignment": "center",
+        "verticalalignment": "center",
+    }
+    arrowprops = {
+        "arrowstyle": "->",
+        "shrinkA": 2,
+        "shrinkB": 14,
+        "linewidth": 1,
+        "edgecolor": "black",
+    }
+    ax.annotate(
+        "Null\nDistribution",
+        xy=(0, 6),
+        xytext=(0.15, 16),
+        arrowprops=arrowprops,
+        **texprops,
+    )
+    ax.annotate(
+        "Observed\nCorrelation",
+        xy=(corr_true, 6),
+        xytext=(corr_true - 0.15, 16),
+        arrowprops=arrowprops,
+        **texprops,
+    )
 
 
-aspect = 0.7
-fig, axs = plt.subplots(nrows=4, ncols=2)
+aspect = 0.75
+fig = plt.figure(constrained_layout=True)
 fig.set_dpi(500)
 fig.set_size_inches((5.31, 5.31 / aspect))
-ax_hipp_ymax = axs[0, 0]
-ax_hipp_a = axs[0, 1]
-ax_hipp_corr = axs[1, 0]
-ax_hipp_ya = axs[1, 1]
-ax_nac_ymax = axs[2, 0]
-ax_nac_a = axs[2, 1]
-ax_nac_corr = axs[3, 0]
-ax_nac_ya = axs[3, 1]
+gs = fig.add_gridspec(4, 2, height_ratios=(1.1, 1, 1.1, 1))
+ax_hipp_ymax = fig.add_subplot(gs[0, 0])
+ax_hipp_a = fig.add_subplot(gs[0, 1])
+ax_hipp_corr = fig.add_subplot(gs[1, 0])
+ax_hipp_ya = fig.add_subplot(gs[1, 1])
+ax_nac_ymax = fig.add_subplot(gs[2, 0])
+ax_nac_a = fig.add_subplot(gs[2, 1])
+ax_nac_corr = fig.add_subplot(gs[3, 0])
+ax_nac_ya = fig.add_subplot(gs[3, 1])
 implot(hipp_max_y.values, ax_hipp_ymax)
-ax_hipp_ymax.set_title("Max Projection", fontweight="bold")
+ax_hipp_ymax.set_title("Max Projection")
+ax_hipp_ymax.text(
+    -0.1,
+    1.2,
+    "A",
+    fontsize=BIG_SIZE,
+    fontweight="bold",
+    transform=ax_hipp_ymax.transAxes,
+)
 implot(hipp_a.values, ax_hipp_a)
-ax_hipp_a.set_title("Spatial Footprints", fontweight="bold")
+ax_hipp_a.set_title("Spatial Footprints")
 corrplot(hipp_corrs, hipp_corr_true, ax_hipp_corr)
-ax_hipp_corr.set_title("Shuffled Correlations", fontweight="bold")
-lineplot(
-    x="fm_sample",
-    y="ya",
-    hue="shuf",
-    hue_order=["Shuffled", "Aligned"],
-    data=hipp_ya,
-    ylim=(10, 50),
-    ax=ax_hipp_ya,
+ax_hipp_corr.set_title(
+    "Correlations Between Max Projection\nand Shuffled Spatial Footprints"
 )
-ax_hipp_ya.set_title("Signal Relative to Calcium Events", fontweight="bold")
+lineplot(
+    data=hipp_ya, ylim=(10, 50), ax=ax_hipp_ya,
+)
+ax_hipp_ya.set_title("Fluorescence Signal\nRelative to Calcium Events")
 implot(nac_max_y.values, ax_nac_ymax)
-ax_nac_ymax.set_title("Max Projection", fontweight="bold")
-implot(nac_a.values, ax_nac_a)
-ax_nac_a.set_title("Spatial Footprint", fontweight="bold")
-corrplot(nac_corrs, nac_corr_true, ax_nac_corr)
-ax_nac_corr.set_title("Shuffled Correlations", fontweight="bold")
-lineplot(
-    x="fm_sample",
-    y="ya",
-    hue="shuf",
-    hue_order=["Shuffled", "Aligned"],
-    data=nac_ya,
-    ylim=(13, 45),
-    ax=ax_nac_ya,
+ax_nac_ymax.set_title("Max Projection")
+ax_nac_ymax.text(
+    -0.1,
+    1.2,
+    "B",
+    fontsize=BIG_SIZE,
+    fontweight="bold",
+    transform=ax_nac_ymax.transAxes,
 )
-ax_nac_ya.set_title("Signal Relative to Calcium Events", fontweight="bold")
-fig.tight_layout()
+implot(nac_a.values, ax_nac_a)
+ax_nac_a.set_title("Spatial Footprints")
+corrplot(nac_corrs, nac_corr_true, ax_nac_corr)
+ax_nac_corr.set_title(
+    "Correlations Between Max Projection\nand Shuffled Spatial Footprints"
+)
+lineplot(
+    data=nac_ya, ylim=(13, 45), ax=ax_nac_ya,
+)
+ax_nac_ya.set_title("Fluorescence Signal\nRelative to Calcium Events")
+# fig.tight_layout()
 fig.savefig("./figs/validate.svg")

@@ -148,7 +148,6 @@ def tmplot(df, offset, xlim, ylim, ax, **kwargs):
         lambda r: r["val_norm"] * 0.5 if r["trace"] == "Spikes" else r["val_norm"],
         axis="columns",
     )
-    nuid = df["unit_id"].nunique()
     for igrp, (uid, df_sub) in enumerate(df.groupby("unit_id", sort=False)):
         df_sub = df_sub.copy()
         df_sub["val_norm"] = df_sub["val_norm"] + igrp * offset

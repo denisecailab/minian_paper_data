@@ -7,7 +7,6 @@ import seaborn as sns
 import pickle as pkl
 import place_cell as plc
 import matplotlib.pyplot as plt
-from matplotlib import ticker
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 SMALL_SIZE = 5
@@ -137,6 +136,11 @@ match_ft_sh = match_flt_sh[
 corrs = match_ft_sh.groupby(["hshift", "wshift"]).apply(corr)
 corrs = corrs.rename("corr").astype(float).reset_index()
 corrs.to_pickle("./data/inter/corrs_sh_pfd2.pkl")
+
+# %%
+# load correlations
+with open("./data/inter/corrs_sh_pfd2.pkl", "rb") as pklf:
+    corrs = pkl.load(pklf)
 # %%
 # generate plot
 def plc_heatmap(data, ax, **kwargs):
@@ -159,8 +163,8 @@ def plc_heatmap(data, ax, **kwargs):
 
 def corr_heatmap(data, ax, **kwargs):
     sns.heatmap(data, ax=ax, rasterized=True, **kwargs)
-    ax.set_xlabel("Horizontol Shifts (px)", fontstyle="italic")
-    ax.set_ylabel("Vertical Shifts (px)", fontstyle="italic")
+    ax.set_xlabel("Horizontol Shift (px)", fontstyle="italic")
+    ax.set_ylabel("Vertical Shift (px)", fontstyle="italic")
     ax.set_xticks(np.arange(0, 101, 10) + 0.5)
     ax.set_xticklabels(np.arange(-50, 51, 10), rotation="horizontal", ha="center")
     ax.set_xlim((0, data.shape[1]))
@@ -174,18 +178,24 @@ def corr_heatmap(data, ax, **kwargs):
         ax.spines[sp].set_linewidth(0.4)
 
 
-aspect = 0.7
+aspect = 0.8
 fig = plt.figure(constrained_layout=True)
 fig.set_dpi(500)
 fig.set_size_inches((5.31, 5.31 / aspect))
 gs0 = fig.add_gridspec(2, 1, height_ratios=(1.6, 1))
 gs1 = gs0[0].subgridspec(1, 2)
 ax_ssA = fig.add_subplot(gs1[0, 0])
-ax_ssA.set_title("Session 1", fontweight="bold")
+ax_ssA.set_title("Session 1")
+ax_ssA.text(
+    -0.2, 1.1, "A", fontsize=BIG_SIZE, fontweight="bold", transform=ax_ssA.transAxes,
+)
 ax_ssB = fig.add_subplot(gs1[0, 1])
-ax_ssB.set_title("Session 2", fontweight="bold")
+ax_ssB.set_title("Session 2")
 ax_corr = fig.add_subplot(gs0[1, 0])
-ax_corr.set_title("Correlations", fontweight="bold")
+ax_corr.text(
+    -0.2, 1.1, "B", fontsize=BIG_SIZE, fontweight="bold", transform=ax_corr.transAxes,
+)
+# ax_corr.set_title("Correlations")
 plc_heatmap(
     fr.sel(
         animal=match_ft["animal"].to_xarray(),
@@ -229,4 +239,5 @@ ax_corr_cbar = inset_axes(
 )
 corr_cbar = fig.colorbar(ax_corr.collections[0], cax=ax_corr_cbar, extend="both")
 corr_cbar.minorticks_on()
+corr_cbar.set_label("Place Fields Correlation", rotation=-90, labelpad=4)
 fig.savefig("./figs/validate_plc.svg")

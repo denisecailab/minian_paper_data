@@ -4,3 +4,7 @@ ezTrack_snapshot
 minian_snapshot
 .vscode
 __pycache__
+.ipynb_checkpoints
+*.png
+*.docx
+*.pdf
