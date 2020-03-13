@@ -1,9 +1,12 @@
+# %%
 import os
 import sys
 import numpy as np
 import xarray as xr
 import pandas as pd
 import holoviews as hv
+import dask as da
+from dask.distributed import Client, LocalCluster
 from sklearn.mixture import GaussianMixture
 from scipy.ndimage import label
 from scipy.signal import medfilt
@@ -12,9 +15,9 @@ from scipy.signal import medfilt
 # sys.path.append(MINIAN_PATH)
 
 # from minian.utilities import open_minian
-from minian_snapshot.minian.utilities import open_minian
+from minian_snapshot.minian.utilities import open_minian, xrconcat_recursive
 
-
+# %%
 def map_ts(ts: pd.DataFrame) -> pd.DataFrame:
     """map frames from Cam1 to Cam0 with nearest neighbour using the timestamp file from miniscope recordings.
     
@@ -28,19 +31,22 @@ def map_ts(ts: pd.DataFrame) -> pd.DataFrame:
     pd.DataFrame
         output dataframe. should contain field 'fmCam0' and 'fmCam1'
     """
-    ts["ts_behav"] = np.where(ts["camNum"] == 1, ts["sysClock"], np.nan)
-    ts["ts_forward"] = ts["ts_behav"].fillna(method="ffill")
-    ts["ts_backward"] = ts["ts_behav"].fillna(method="bfill")
-    ts["diff_forward"] = np.absolute(ts["sysClock"] - ts["ts_forward"])
-    ts["diff_backward"] = np.absolute(ts["sysClock"] - ts["ts_backward"])
-    ts["fm_behav"] = np.where(ts["camNum"] == 1, ts["frameNum"], np.nan)
-    ts["fm_forward"] = ts["fm_behav"].fillna(method="ffill")
-    ts["fm_backward"] = ts["fm_behav"].fillna(method="bfill")
-    ts["fmCam1"] = np.where(
-        ts["diff_forward"] < ts["diff_backward"], ts["fm_forward"], ts["fm_backward"]
+    ts_sort = ts.sort_values("sysClock")
+    ts_sort["ts_behav"] = np.where(ts_sort["camNum"] == 1, ts_sort["sysClock"], np.nan)
+    ts_sort["ts_forward"] = ts_sort["ts_behav"].fillna(method="ffill")
+    ts_sort["ts_backward"] = ts_sort["ts_behav"].fillna(method="bfill")
+    ts_sort["diff_forward"] = np.absolute(ts_sort["sysClock"] - ts_sort["ts_forward"])
+    ts_sort["diff_backward"] = np.absolute(ts_sort["sysClock"] - ts_sort["ts_backward"])
+    ts_sort["fm_behav"] = np.where(ts_sort["camNum"] == 1, ts_sort["frameNum"], np.nan)
+    ts_sort["fm_forward"] = ts_sort["fm_behav"].fillna(method="ffill")
+    ts_sort["fm_backward"] = ts_sort["fm_behav"].fillna(method="bfill")
+    ts_sort["fmCam1"] = np.where(
+        ts_sort["diff_forward"] < ts_sort["diff_backward"],
+        ts_sort["fm_forward"],
+        ts_sort["fm_backward"],
     )
     ts_map = (
-        ts[ts["camNum"] == 0][["frameNum", "fmCam1"]]
+        ts_sort[ts_sort["camNum"] == 0][["frameNum", "fmCam1"]]
         .dropna()
         .rename(columns=dict(frameNum="fmCam0"))
         .astype(dict(fmCam1=int))
@@ -50,8 +56,8 @@ def map_ts(ts: pd.DataFrame) -> pd.DataFrame:
     return ts_map
 
 
-def run_direction(
-    behav: pd.DataFrame, run_dim="X", wnd=31, thres_dx=0.01
+def process_behav(
+    behav: pd.DataFrame, run_dim="X", wnd=31, thres_dx=0.05, thres_rw=20,
 ) -> pd.DataFrame:
     """differntiate locations based on running directions,
     and filter out frames when the animal is not moving.
@@ -74,8 +80,29 @@ def run_direction(
         output dataframe
     """
     behav["dx"] = medfilt(np.gradient(behav[run_dim], wnd), wnd)
-    behav = behav[behav["dx"].abs() > thres_dx]
-    behav[run_dim] = behav[run_dim] * np.sign(behav["dx"])
+    behav["stationary"] = thres_gmm(np.abs(behav["dx"]).values, com=0)
+    xmax, xmin = behav["X"].max() - thres_rw, behav["X"].min() + thres_rw
+    behav["reward_zone"] = ~behav["X"].between(xmin, xmax)
+    rw_low = (behav["X"] < xmin).astype(int)
+    rw_high = (behav["X"] > xmax).astype(int)
+    trans_low = [(t, "low") for t in np.where(rw_low.diff() == -1)[0]]
+    trans_high = [(t, "high") for t in np.where(rw_high.diff() == -1)[0]]
+    trans = (
+        pd.DataFrame(trans_low + trans_high, columns=("index", "reward"))
+        .sort_values("index")
+        .reset_index(drop=True)
+    )
+    if trans.iloc[0]["reward"] == "low":
+        trans["r"] = trans["reward"].map({"low": 1, "high": 0})
+    else:
+        trans["r"] = trans["reward"].map({"low": 0, "high": 1})
+    trans = trans[trans["r"].diff().fillna(1) == 1]
+    behav["trial"] = 0
+    behav.loc[trans["index"], "trial"] = 1
+    behav["trial"] = behav["trial"].cumsum().astype(int)
+    dx_sign = np.sign(behav["dx"])
+    behav[run_dim] = behav[run_dim] * dx_sign
+    behav = behav[(~behav["stationary"]) & (~behav["reward_zone"])]
     return behav
 
 
@@ -92,7 +119,8 @@ def norm(a: np.ndarray) -> np.ndarray:
     np.ndarray
         normalized array.
     """
-    return (a - np.nanmin(a)) / (np.nanmax(a) - np.nanmin(a) + np.finfo(float).eps)
+    amin = np.nanmin(a)
+    return (a - amin) / (np.nanmax(a) - amin + np.finfo(float).eps)
 
 
 def compute_fr(S: xr.DataArray, bin_dim="x", nbins=100, normalize=True) -> xr.DataArray:
@@ -170,11 +198,29 @@ def compute_si(fr: xr.DataArray, occp: xr.DataArray, agg_dim="x_bins") -> xr.Dat
     xr.DataArray
         output spatial information
     """
-    mfr = fr.mean(agg_dim).compute()
-    return (occp * fr * np.log2(fr / mfr + np.finfo(np.float32).eps)).sum(agg_dim)
+    mfr = fr.mean(agg_dim)
+    return (occp * fr / mfr * np.log2(fr / mfr + np.finfo(np.float32).eps)).sum(agg_dim)
 
 
-def thres_gmm(a: xr.DataArray) -> xr.DataArray:
+def compute_stb(S: xr.DataArray, **kwargs) -> xr.DataArray:
+    tmax = np.max(S.coords["trial"])
+    fr_odd = compute_fr(S.sel(frame=(S.coords["trial"] % 2 == 1)), **kwargs)
+    fr_even = compute_fr(S.sel(frame=(S.coords["trial"] % 2 == 0)), **kwargs)
+    fr_first = compute_fr(S.sel(frame=(S.coords["trial"] < tmax / 2)), **kwargs)
+    fr_last = compute_fr(S.sel(frame=(S.coords["trial"] > tmax / 2)), **kwargs)
+    z_oe = compute_corr(fr_odd, fr_even)
+    z_fl = compute_corr(fr_first, fr_last)
+    return (z_fl + z_oe) / 2
+
+
+def compute_corr(fr1: xr.DataArray, fr2: xr.DataArray) -> xr.DataArray:
+    m1, m2 = fr1.mean("x_bins"), fr2.mean("x_bins")
+    s1, s2 = fr1.std("x_bins"), fr2.std("x_bins")
+    r = ((fr1 - m1) * (fr2 - m2)).mean("x_bins") / (s1 * s2)
+    return np.arctanh(r)
+
+
+def thres_gmm(a: xr.DataArray, com=-1) -> xr.DataArray:
     """binnarize input array using gaussian mixture model.
     
     Parameters
@@ -190,8 +236,8 @@ def thres_gmm(a: xr.DataArray) -> xr.DataArray:
     a = a.reshape(-1, 1)
     gmm = GaussianMixture(n_components=2)
     gmm.fit(a)
-    idg = np.argsort(gmm.means_.reshape(-1))[-1]
-    return (gmm.predict(a) == idg).reshape(-1).astype(int)
+    idg = np.argsort(gmm.means_.reshape(-1))[com]
+    return (gmm.predict(a) == idg).reshape(-1)
 
 
 def thres_psize(fr: xr.DataArray, qthres: float, sz_thres: int) -> bool:
@@ -228,7 +274,7 @@ def thres_psize(fr: xr.DataArray, qthres: float, sz_thres: int) -> bool:
 
 
 def process_place(
-    dpath: str, nbins=200, nshuf=1000, si_qthres=0.95, sz_qthres=0.95, sz_thres=2
+    dpath: str, nbins=200, nshuf=1000, sig_thres=0.95, sz_qthres=0.95, sz_thres=2
 ) -> xr.Dataset:
     try:
         ts = pd.read_csv(os.path.join(dpath, "timestamp.dat"), delimiter="\t")
@@ -246,11 +292,14 @@ def process_place(
         print("file missing under {}".format(dpath))
         return xr.Dataset()
     S = minian_ds["S"].chunk({"frame": -1})
-    behav = run_direction(behav)
+    behav = process_behav(behav)
     fmap = map_ts(ts)
-    fmap = fmap.merge(behav, on="fmCam1").set_index("fmCam0")
+    fmap = fmap.merge(behav, how="left", on="fmCam1").set_index("fmCam0")
     try:
-        S = S.assign_coords(x=("frame", fmap["X"][S.coords["frame"].values]))
+        S = S.assign_coords(
+            x=("frame", fmap["X"][S.coords["frame"].values]),
+            trial=("frame", fmap["trial"][S.coords["frame"].values]),
+        )
     except KeyError:
         print("behavior mapping error, check timestamp file")
         return xr.Dataset()
@@ -262,22 +311,25 @@ def process_place(
             output_core_dims=[["frame"]],
             vectorize=True,
             dask="parallelized",
-            output_dtypes=[int],
+            output_dtypes=[bool],
         )
         .rename("S_thres")
-        .compute()
+        .persist()
     )
     fr = compute_fr(S_thres, nbins=nbins).compute().rename("fr")
+    stb = compute_stb(S_thres, nbins=nbins).compute().rename("stb")
     occp = compute_occp(S_thres, nbins=nbins).compute().rename("occp")
     si = compute_si(fr, occp).compute().rename("si")
-    shuf_ls = []
+    sh_ls = []
     for sh in np.random.random_integers(0, S_thres.sizes["frame"], nshuf):
         S_sh = S_thres.roll(frame=sh, roll_coords=False)
-        fr_sh = compute_fr(S_sh, nbins=nbins)
-        si_sh = compute_si(fr_sh, occp)
-        shuf_ls.append(si_sh)
-    si_shuf = xr.concat(shuf_ls, "shuf").compute()
-    mask_si = (si > si_shuf.quantile(si_qthres, "shuf")).rename("mask_si")
+        sh_ls.append(S_sh)
+    S_shuf = xr.concat(sh_ls, "shuf").chunk({"shuf": "auto"})
+    fr_shuf = compute_fr(S_shuf, nbins=nbins).compute()
+    si_shuf = compute_si(fr_shuf, occp).compute()
+    stb_shuf = compute_stb(S_shuf, nbins=nbins).compute()
+    mask_si = (si > si_shuf.quantile(sig_thres, "shuf")).rename("mask_si")
+    mask_stb = (stb > stb_shuf.quantile(sig_thres, "shuf")).rename("mask_stb")
     maxpos = xr.apply_ufunc(
         thres_psize,
         fr,
@@ -286,7 +338,7 @@ def process_place(
         vectorize=True,
         kwargs={"qthres": sz_qthres, "sz_thres": sz_thres},
     ).rename("maxpos")
-    return xr.merge([S_thres, fr, occp, si, mask_si, maxpos])
+    return xr.merge([S_thres, fr, occp, si, mask_si, stb, mask_stb, maxpos])
 
 
 def vec_corr(fr0: xr.DataArray, fr1: xr.DataArray, agg_dim="x_bins", vec_dim="index"):
@@ -301,5 +353,17 @@ def vec_corr(fr0: xr.DataArray, fr1: xr.DataArray, agg_dim="x_bins", vec_dim="in
     )
 
 
+# %%
 if __name__ == "__main__":
-    process_place("./data/ts45-4/s11")
+    dpath = "./data/pfd2"
+    cluster = LocalCluster(dashboard_address="0.0.0.0:8787")
+    client = Client(cluster)
+    ds_ls = []
+    for root, dirs, files in os.walk(dpath):
+        if root.count(os.path.sep) > (dpath.count(os.path.sep) + 2):
+            continue
+        ds = process_place(root, nshuf=1000)
+        ds_ls.append(ds)
+    plc_ds = xrconcat_recursive(list(filter(bool, ds_ls)), ["animal", "session"])
+    print(plc_ds)
+    plc_ds.to_netcdf("./data/inter/place_cells.nc")

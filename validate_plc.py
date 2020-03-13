@@ -68,12 +68,19 @@ def flatten_ss(row):
 match = match[match["group", "group"].notnull()]
 match_flt = match.apply(flatten_ss, axis="columns")
 mask_si = plcds["mask_si"].to_dataframe()["mask_si"].astype(bool)
+mask_stb = plcds["mask_stb"].to_dataframe()["mask_stb"].astype(bool)
 maxpos = plcds["maxpos"].to_dataframe()["maxpos"]
 mask_sz = maxpos.notnull()
 match_flt["mask_si_ssA"] = mask_si.loc[
     list(match_flt[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None))
 ].values
 match_flt["mask_si_ssB"] = mask_si.loc[
+    list(match_flt[["animal", "sessionB", "uidB"]].itertuples(index=False, name=None))
+].values
+match_flt["mask_stb_ssA"] = mask_stb.loc[
+    list(match_flt[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None))
+].values
+match_flt["mask_stb_ssB"] = mask_stb.loc[
     list(match_flt[["animal", "sessionB", "uidB"]].itertuples(index=False, name=None))
 ].values
 match_flt["mask_sz_ssA"] = mask_sz.loc[
@@ -88,7 +95,9 @@ match_flt["maxpos"] = maxpos.loc[
 match_flt = match_flt.sort_values("maxpos")
 match_ft = match_flt.dropna()
 match_ft = (
-    match_flt[match_flt[["mask_sz_ssA", "mask_sz_ssB"]].all(axis="columns")]
+    match_flt[
+        match_flt[["mask_sz_ssA", "mask_si_ssA", "mask_stb_ssA"]].all(axis="columns")
+    ]
     .dropna()
     .reset_index()
 )
@@ -133,6 +142,7 @@ match_ft_sh = match_flt_sh.dropna()
 match_ft_sh = match_flt_sh[
     match_flt_sh[["mask_sz_ssA", "mask_sz_ssB"]].all(axis="columns")
 ].dropna()
+# %%
 corrs = match_ft_sh.groupby(["hshift", "wshift"]).apply(corr)
 corrs = corrs.rename("corr").astype(float).reset_index()
 corrs.to_pickle("./data/inter/corrs_sh_pfd2.pkl")
