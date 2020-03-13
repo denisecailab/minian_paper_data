@@ -5,6 +5,7 @@ minian_snapshot
 .vscode
 __pycache__
 .ipynb_checkpoints
+dask-worker-space
 *.png
 *.docx
 *.pdf
