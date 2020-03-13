@@ -74,20 +74,11 @@ mask_sz = maxpos.notnull()
 match_flt["mask_si_ssA"] = mask_si.loc[
     list(match_flt[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None))
 ].values
-match_flt["mask_si_ssB"] = mask_si.loc[
-    list(match_flt[["animal", "sessionB", "uidB"]].itertuples(index=False, name=None))
-].values
 match_flt["mask_stb_ssA"] = mask_stb.loc[
     list(match_flt[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None))
 ].values
-match_flt["mask_stb_ssB"] = mask_stb.loc[
-    list(match_flt[["animal", "sessionB", "uidB"]].itertuples(index=False, name=None))
-].values
 match_flt["mask_sz_ssA"] = mask_sz.loc[
     list(match_flt[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None))
-].values
-match_flt["mask_sz_ssB"] = mask_sz.loc[
-    list(match_flt[["animal", "sessionB", "uidB"]].itertuples(index=False, name=None))
 ].values
 match_flt["maxpos"] = maxpos.loc[
     list(match_flt[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None))
@@ -128,21 +119,25 @@ match_flt_sh["sessionA"] = "s10"
 match_flt_sh["sessionB"] = "s11"
 maxpos = plcds["maxpos"].to_dataframe()["maxpos"]
 mask_sz = maxpos.notnull()
+match_flt_sh["mask_si_ssA"] = mask_si.loc[
+    list(
+        match_flt_sh[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None)
+    )
+].values
 match_flt_sh["mask_sz_ssA"] = mask_sz.loc[
     list(
         match_flt_sh[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None)
     )
 ].values
-match_flt_sh["mask_sz_ssB"] = mask_sz.loc[
+match_flt_sh["mask_stb_ssA"] = mask_stb.loc[
     list(
-        match_flt_sh[["animal", "sessionB", "uidB"]].itertuples(index=False, name=None)
+        match_flt_sh[["animal", "sessionA", "uidA"]].itertuples(index=False, name=None)
     )
 ].values
 match_ft_sh = match_flt_sh.dropna()
 match_ft_sh = match_flt_sh[
-    match_flt_sh[["mask_sz_ssA", "mask_sz_ssB"]].all(axis="columns")
+    match_flt_sh[["mask_si_ssA", "mask_sz_ssA", "mask_stb_ssA"]].all(axis="columns")
 ].dropna()
-# %%
 corrs = match_ft_sh.groupby(["hshift", "wshift"]).apply(corr)
 corrs = corrs.rename("corr").astype(float).reset_index()
 corrs.to_pickle("./data/inter/corrs_sh_pfd2.pkl")
@@ -249,5 +244,5 @@ ax_corr_cbar = inset_axes(
 )
 corr_cbar = fig.colorbar(ax_corr.collections[0], cax=ax_corr_cbar, extend="both")
 corr_cbar.minorticks_on()
-corr_cbar.set_label("Place Fields Correlation", rotation=-90, labelpad=4)
+corr_cbar.set_label("Place Fields Correlation", rotation=-90, labelpad=6)
 fig.savefig("./figs/validate_plc.svg")
