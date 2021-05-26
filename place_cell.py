@@ -8,7 +8,7 @@ import holoviews as hv
 import dask as da
 from dask.distributed import Client, LocalCluster
 from sklearn.mixture import GaussianMixture
-from scipy.ndimage import label
+from scipy.ndimage import label, gaussian_filter1d
 from scipy.signal import medfilt
 
 # MINIAN_PATH = "./minian_snapshot"
@@ -123,7 +123,17 @@ def norm(a: np.ndarray) -> np.ndarray:
     return (a - amin) / (np.nanmax(a) - amin + np.finfo(float).eps)
 
 
-def compute_fr(S: xr.DataArray, bin_dim="x", nbins=100, normalize=True) -> xr.DataArray:
+def gaussian_nan(a, **kwargs):
+    nan_mask = np.isnan(a)
+    v = np.nan_to_num(a)
+    w = np.where(nan_mask, 0, 1).astype(np.float)
+    ag = gaussian_filter1d(v, **kwargs) / gaussian_filter1d(w, **kwargs)
+    return np.where(nan_mask, np.nan, ag)
+
+
+def compute_fr(
+    S: xr.DataArray, bin_dim="x", nbins=100, normalize=True, sigma=2.5
+) -> xr.DataArray:
     """compute averaged firing rate by binning along the 'frame' dimension according to `bin_dim`.
     
     Parameters
@@ -155,10 +165,21 @@ def compute_fr(S: xr.DataArray, bin_dim="x", nbins=100, normalize=True) -> xr.Da
             dask="parallelized",
             output_dtypes=[fr.dtype],
         )
+    if sigma is not None:
+        fr = xr.apply_ufunc(
+            gaussian_nan,
+            fr.chunk({bdim: -1}),
+            input_core_dims=[[bdim]],
+            output_core_dims=[[bdim]],
+            vectorize=True,
+            kwargs={"sigma": sigma},
+            dask="parallelized",
+            output_dtypes=[fr.dtype],
+        )
     return fr
 
 
-def compute_occp(S: xr.DataArray, bin_dim="x", nbins=100) -> xr.DataArray:
+def compute_occp(S: xr.DataArray, bin_dim="x", nbins=100, sigma=2.5) -> xr.DataArray:
     """calculate the occupancy based on count of frames in each bin according to `bin_dim`.
     
     Parameters
@@ -178,6 +199,17 @@ def compute_occp(S: xr.DataArray, bin_dim="x", nbins=100) -> xr.DataArray:
     bdim = bin_dim + "_bins"
     occp = S[bin_dim].groupby_bins(bin_dim, nbins).count() / S[bin_dim].count()
     occp = occp.assign_coords({bdim: np.arange(occp.sizes[bdim])}).rename("occp")
+    if sigma is not None:
+        occp = xr.apply_ufunc(
+            gaussian_nan,
+            occp.chunk({bdim: -1}),
+            input_core_dims=[[bdim]],
+            output_core_dims=[[bdim]],
+            vectorize=True,
+            dask="parallelized",
+            kwargs={"sigma": sigma},
+            output_dtypes=[occp.dtype],
+        )
     return occp
 
 
@@ -199,7 +231,7 @@ def compute_si(fr: xr.DataArray, occp: xr.DataArray, agg_dim="x_bins") -> xr.Dat
         output spatial information
     """
     mfr = fr.mean(agg_dim)
-    return (occp * fr / mfr * np.log2(fr / mfr + np.finfo(np.float32).eps)).sum(agg_dim)
+    return (occp * fr / mfr * np.log2(fr / mfr, where=fr != 0)).sum(agg_dim)
 
 
 def compute_stb(S: xr.DataArray, **kwargs) -> xr.DataArray:
@@ -303,19 +335,20 @@ def process_place(
     except KeyError:
         print("behavior mapping error, check timestamp file")
         return xr.Dataset()
-    S_thres = (
-        xr.apply_ufunc(
-            thres_gmm,
-            S,
-            input_core_dims=[["frame"]],
-            output_core_dims=[["frame"]],
-            vectorize=True,
-            dask="parallelized",
-            output_dtypes=[bool],
-        )
-        .rename("S_thres")
-        .persist()
-    )
+    # S_thres = (
+    #     xr.apply_ufunc(
+    #         thres_gmm,
+    #         S,
+    #         input_core_dims=[["frame"]],
+    #         output_core_dims=[["frame"]],
+    #         vectorize=True,
+    #         dask="parallelized",
+    #         output_dtypes=[bool],
+    #     )
+    #     .rename("S_thres")
+    #     .persist()
+    # )
+    S_thres = S
     fr = compute_fr(S_thres, nbins=nbins).compute().rename("fr")
     stb = compute_stb(S_thres, nbins=nbins).compute().rename("stb")
     occp = compute_occp(S_thres, nbins=nbins).compute().rename("occp")
@@ -356,7 +389,7 @@ def vec_corr(fr0: xr.DataArray, fr1: xr.DataArray, agg_dim="x_bins", vec_dim="in
 # %%
 if __name__ == "__main__":
     dpath = "./data/pfd2"
-    cluster = LocalCluster(dashboard_address="0.0.0.0:8787")
+    cluster = LocalCluster(dashboard_address="0.0.0.0:9999")
     client = Client(cluster)
     ds_ls = []
     for root, dirs, files in os.walk(dpath):
