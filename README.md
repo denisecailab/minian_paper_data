@@ -17,3 +17,8 @@ This repository contains all the data and code used to generate the figures for 
 * `validate.py` validate the spatial footprints and spike inference from two brain regions and generate fig 14.
 * `validate_plc.py` validate spatial firing pattern of place cells across original and shuffled cell mappings and generate fig 15.
 * `flow_chart.py` generate the flow chart of the pipeline (fig 1).
+
+## data source
+
+The folder `data/`, `minian_snapshot/`, and `ezTrack_snapshot/` are static and large, and hence not tracked with this git repo.
+They are hosted as zip files on a google drive here: https://drive.google.com/drive/folders/1CKVsDWEuG9WEsJroHdFuJKoO4_X2IfR5?usp=sharing.
