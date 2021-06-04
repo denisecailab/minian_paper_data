@@ -21,4 +21,4 @@ This repository contains all the data and code used to generate the figures for 
 ## data source
 
 The folder `data/`, `minian_snapshot/`, and `ezTrack_snapshot/` are static and large, and hence not tracked with this git repo.
-They are hosted as zip files on a google drive here: https://drive.google.com/drive/folders/1CKVsDWEuG9WEsJroHdFuJKoO4_X2IfR5?usp=sharing.
+They are hosted as zip files on a google drive here: https://drive.google.com/drive/folders/1EpDquFInJRjtdBo_BMHsaFErmqr4w3lD?usp=sharing
