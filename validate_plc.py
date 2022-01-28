@@ -1,13 +1,15 @@
 # %%
 # imports and setup
+import os
+
+import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 import pandas as pd
 import seaborn as sns
-import pickle as pkl
-import place_cell as plc
-import matplotlib.pyplot as plt
+import xarray as xr
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+import place_cell as plc
 
 SMALL_SIZE = 8
 MEDIUM_SIZE = 11
@@ -39,6 +41,7 @@ sns.set(
     }
 )
 sns.set_style("ticks")
+OUT_PATH = "./output/Figure20"
 
 # %%
 # open datasets
@@ -208,27 +211,27 @@ ax_corr.text(
     transform=ax_corr.transAxes,
 )
 # ax_corr.set_title("Correlations")
+frA = fr.sel(
+    animal=match_ft["animal"].to_xarray(),
+    session=match_ft["sessionA"].to_xarray(),
+    unit_id=match_ft["uidA"].to_xarray(),
+)
+frB = fr.sel(
+    animal=match_ft["animal"].to_xarray(),
+    session=match_ft["sessionB"].to_xarray(),
+    unit_id=match_ft["uidB"].to_xarray(),
+)
+os.makedirs(OUT_PATH, exist_ok=True)
+frA.to_netcdf(os.path.join(OUT_PATH, "spatial_firing_session1.nc"))
+frB.to_netcdf(os.path.join(OUT_PATH, "spatial_firing_session2.nc"))
+corrs.to_csv(os.path.join(OUT_PATH, "shifted_correlations.csv"), index=False)
 plc_heatmap(
-    fr.sel(
-        animal=match_ft["animal"].to_xarray(),
-        session=match_ft["sessionA"].to_xarray(),
-        unit_id=match_ft["uidA"].to_xarray(),
-    )
-    .to_dataframe()
-    .reset_index()
-    .pivot("index", "x_bins", "fr"),
+    frA.to_dataframe().reset_index().pivot("index", "x_bins", "fr"),
     ax_ssA,
     cbar=False,
 )
 plc_heatmap(
-    fr.sel(
-        animal=match_ft["animal"].to_xarray(),
-        session=match_ft["sessionB"].to_xarray(),
-        unit_id=match_ft["uidB"].to_xarray(),
-    )
-    .to_dataframe()
-    .reset_index()
-    .pivot("index", "x_bins", "fr"),
+    frB.to_dataframe().reset_index().pivot("index", "x_bins", "fr"),
     ax_ssB,
     cbar=False,
 )
