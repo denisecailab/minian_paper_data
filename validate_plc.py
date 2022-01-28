@@ -9,13 +9,13 @@ import place_cell as plc
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-SMALL_SIZE = 5
-MEDIUM_SIZE = 6
-BIG_SIZE = 7
+SMALL_SIZE = 8
+MEDIUM_SIZE = 11
+BIG_SIZE = 11
 sns.set(
     rc={
         "font.family": "sans-serif",
-        "font.sans-serif": ["Helvetica"],
+        "font.sans-serif": ["Arial"],
         "font.size": MEDIUM_SIZE,
         "axes.titlesize": MEDIUM_SIZE,
         "axes.labelsize": MEDIUM_SIZE,  # size of faceting titles
@@ -44,10 +44,8 @@ sns.set_style("ticks")
 # open datasets
 plcds = xr.open_dataset("./data/inter/place_cells.nc")
 fr = plcds["fr"].compute()
-with open("./data/inter/mappings_pfd2.pkl", "rb") as fmap:
-    match = pkl.load(fmap)
-with open("./data/inter/mappings_sh_pfd2.pkl", "rb") as fmap:
-    match_sh = pkl.load(fmap)
+match = pd.read_pickle("./data/inter/mappings_pfd2.pkl")
+match_sh = pd.read_pickle("./data/inter/mappings_sh_pfd2.pkl")
 
 # %%
 # transform mappings
@@ -144,8 +142,7 @@ corrs.to_pickle("./data/inter/corrs_sh_pfd2.pkl")
 
 # %%
 # load correlations
-with open("./data/inter/corrs_sh_pfd2.pkl", "rb") as pklf:
-    corrs = pkl.load(pklf)
+corrs = pd.read_pickle("./data/inter/corrs_sh_pfd2.pkl")
 # %%
 # generate plot
 def plc_heatmap(data, ax, **kwargs):
@@ -186,19 +183,29 @@ def corr_heatmap(data, ax, **kwargs):
 aspect = 0.8
 fig = plt.figure(constrained_layout=True)
 fig.set_dpi(500)
-fig.set_size_inches((5.31, 5.31 / aspect))
+fig.set_size_inches((5.51, 5.51 / aspect))  # 14cm
 gs0 = fig.add_gridspec(2, 1, height_ratios=(1.6, 1))
 gs1 = gs0[0].subgridspec(1, 2)
 ax_ssA = fig.add_subplot(gs1[0, 0])
 ax_ssA.set_title("Session 1")
 ax_ssA.text(
-    -0.2, 1.1, "A", fontsize=BIG_SIZE, fontweight="bold", transform=ax_ssA.transAxes,
+    -0.2,
+    1.1,
+    "A",
+    fontsize=BIG_SIZE,
+    fontweight="bold",
+    transform=ax_ssA.transAxes,
 )
 ax_ssB = fig.add_subplot(gs1[0, 1])
 ax_ssB.set_title("Session 2")
 ax_corr = fig.add_subplot(gs0[1, 0])
 ax_corr.text(
-    -0.2, 1.1, "B", fontsize=BIG_SIZE, fontweight="bold", transform=ax_corr.transAxes,
+    -0.2,
+    1.1,
+    "B",
+    fontsize=BIG_SIZE,
+    fontweight="bold",
+    transform=ax_corr.transAxes,
 )
 # ax_corr.set_title("Correlations")
 plc_heatmap(
@@ -244,5 +251,7 @@ ax_corr_cbar = inset_axes(
 )
 corr_cbar = fig.colorbar(ax_corr.collections[0], cax=ax_corr_cbar, extend="both")
 corr_cbar.minorticks_on()
-corr_cbar.set_label("Place Fields Correlation", rotation=-90, labelpad=6)
+corr_cbar.set_label("Place Fields Correlation", rotation=-90, labelpad=12)
 fig.savefig("./figs/validate_plc.svg")
+fig.savefig("./figs/validate_plc.png")
+fig.savefig("./figs/validate_plc.tiff")

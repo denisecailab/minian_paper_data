@@ -12,13 +12,13 @@ from matplotlib.patches import ConnectionPatch
 from matplotlib.colors import hsv_to_rgb
 from bokeh.palettes import Category10_10
 
-SMALL_SIZE = 5
-MEDIUM_SIZE = 6
-BIG_SIZE = 7
+SMALL_SIZE = 8
+MEDIUM_SIZE = 11
+BIG_SIZE = 11
 sns.set(
     rc={
         "font.family": "sans-serif",
-        "font.sans-serif": ["Helvetica"],
+        "font.sans-serif": ["Arial"],
         "font.size": MEDIUM_SIZE,
         "axes.titlesize": BIG_SIZE,
         "axes.labelsize": SMALL_SIZE,  # size of faceting titles
@@ -65,7 +65,7 @@ param_seeds_init = {
     "diff_thres": 3,
 }
 
-varr = load_videos("./data/pfd2/ts45-4/s10", **param_load_videos,)
+varr = load_videos("./data/pfd2/ts45-4/s10", **param_load_videos)
 minian_ds = open_minian("./data/pfd2/ts45-4/s10", backend="zarr")
 max_varr = varr.max("frame").compute()
 max_Y = minian_ds["Y"].max("frame").compute()
@@ -124,8 +124,9 @@ def shplot(x, y, data, hue, ax, xlim, ylim, **kwargs):
     )
     ax.set_xlabel("Frame", labelpad=0.3, fontstyle="italic")
     ax.set_ylabel("Shift (px)", labelpad=0.3, fontstyle="italic")
-    len_hand, len_lab = ax.get_legend_handles_labels()
-    ax.legend(handles=len_hand[1:], labels=len_lab[1:], loc="upper right")
+    # len_hand, len_lab = ax.get_legend_handles_labels()
+    # ax.legend(handles=len_hand[1:], labels=len_lab[1:], loc="upper right")
+    ax.legend(loc="upper right")
     ax.set_aspect((480 / np.diff(ylim)) / (752 / np.diff(xlim)))
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
@@ -201,7 +202,7 @@ arrowstyle = {
 }
 ## setup figure
 aspect = 2
-fig, axs = plt.subplots(2, 3, figsize=(5.31, 5.31 / aspect), dpi=500)
+fig, axs = plt.subplots(2, 3, figsize=(7.87, 7.87 / aspect), dpi=500)
 ax_raw = axs[0, 0]
 ax_Y = axs[0, 1]
 ax_sh = axs[0, 2]
@@ -372,3 +373,5 @@ plt.annotate(
     verticalalignment="bottom",
 )
 fig.savefig("./figs/pipeline.svg")
+fig.savefig("./figs/pipeline.tiff")
+fig.savefig("./figs/pipeline.png")
