@@ -42,6 +42,7 @@ dependencies:
   - tqdm=4.43.0
   - xarray=0.15.0
   - zarr=2.4.0
+  - requests
   - pip:
     - ffmpeg-python==0.2.0
     - medpy==0.4.0
