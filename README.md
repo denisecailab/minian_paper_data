@@ -1,6 +1,6 @@
 # Supplementary data for minian paper
 
-This repository contains all the data and code used to generate the figures for the minian paper
+This repository contains the data and code used to generate Figure 1-15 and Figure 20 of the manuscript "Minian an Open-source Miniscope Analysis Pipeline"
 
 ## repo content
 
@@ -14,11 +14,43 @@ This repository contains all the data and code used to generate the figures for 
 * `cross-registration_shuffle.ipynb` is a modified version of minian notebook that shuffle the location of cells (spatial footprints) and generated cell mappings across sessions.
 * `pipeline_paper.ipynb` is a modified version of minian pipeline to facilitate taking snapshot of visualizations.
 * `place_cell.ipynb` / `place_cell.py` extracts place cells from neural activities based on critirias.
-* `validate.py` validate the spatial footprints and spike inference from two brain regions and generate fig 14.
-* `validate_plc.py` validate spatial firing pattern of place cells across original and shuffled cell mappings and generate fig 15.
+* `validate.py` generate a validation plot that is now obsolete.
+* `validate_plc.py` validate spatial firing pattern of place cells across original and shuffled cell mappings and generate fig 20.
 * `flow_chart.py` generate the flow chart of the pipeline (fig 1).
 
-## data source
+## steps to reproduce
 
-The folder `data/`, `minian_snapshot/`, and `ezTrack_snapshot/` are static and large, and hence not tracked with this git repo.
-They are hosted as zip files on a google drive here: https://drive.google.com/drive/folders/1EpDquFInJRjtdBo_BMHsaFErmqr4w3lD?usp=sharing
+### create environments
+
+1. `conda env create -n minian_paper_data -f misc/encironment.yml`
+
+### get data
+
+The source data are hosted on [figshare](https://doi.org/10.6084/m9.figshare.c.5987038.v1).
+We have a convenient script to retrieve all the necessary data.
+
+1. `python get_data.py`
+
+### reproduce figure 1
+
+1. `python flow_chart.py`
+
+### reproduce figure 2-15
+
+Run through `pipeline_paper.ipynb` and use the developer tool in the browser (preferrable google chrome) to take snapshot with a specific size.
+
+### reproduce figure 20
+
+#### rerun minian and ezTrack processing (Optional)
+
+Since all the intermediate data are retrieved with `get_data.py` under `./data/inter`, this section can be skipped if you just want to reproduce plotting of Figure 20.
+
+1. run through `./concat_video.ipynb` and then `./ezTrack_snapshot/LocationTracking_BatchProcess.ipynb` to produce location tracking results.
+2. for each `pipeline.ipynb` under `./data/pfd2`, change `minian_path` to `"../../../minian_snapshot"` and run through the notebook to reproduce minian results.
+3. run through `./cross-registration.ipynb` and `./cross-registration_shuffle.ipynb` to reproduce cross registrationi results.
+4. run through `./place_cell.ipynb` to classify place cells.
+
+#### reproduce figure 20
+
+1. `python validate_plc.py`
+
